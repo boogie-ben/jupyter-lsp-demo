@@ -1,0 +1,14 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: v4.3.6
+_src_path: https://github.com/jupyterlab/extension-template
+author_email: Boogie.Ben@outlook.com
+author_name: boogie-ben
+has_binder: false
+has_settings: false
+kind: frontend
+labextension_name: jupyterlab_lsp_demo
+project_short_description: A JupyterLab extension. For lsp demo.
+python_name: jupyterlab_lsp_demo
+repository: ''
+test: false
+
