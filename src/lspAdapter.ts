@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 import {
   type Document,
   type IAdapterOptions,
@@ -9,13 +10,7 @@ import { PromiseDelegate } from '@lumino/coreutils';
 // import { IEditorMimeTypeService } from '@jupyterlab/codeeditor'
 import type { CPWDocumentWidget } from './widget';
 import { Signal } from '@lumino/signaling';
-import {
-  CodeMirrorEditorFactory,
-  type CodeMirrorEditor
-} from '@jupyterlab/codemirror';
-import { extensions, languages } from './codeEditor';
-import { CodeEditor } from '@jupyterlab/codeeditor';
-
+import type { CodeMirrorEditor } from '@jupyterlab/codemirror';
 export class CPWAdapter extends WidgetLSPAdapter<CPWDocumentWidget> {
   constructor(widget: CPWDocumentWidget, options: IAdapterOptions) {
     super(widget, options);
@@ -77,30 +72,16 @@ export class CPWAdapter extends WidgetLSPAdapter<CPWDocumentWidget> {
     );
   }
 
-  get activeEditor(): Document.IEditor | undefined {
-    return this.cpw.activeEditor
-      ? wrapEditor(this.cpw.activeEditor)
-      : // : undefined; // if activeEditor is empty, lsp contenxt.ts will throw an error
-        wrapEditor(getPlaceholderEidtor());
-  }
+  private _activeDocumentEditor: Document.IEditor = {
+    getEditor: () => null,
+    // @ts-ignore
+    ready: async () => null,
+    // @ts-ignore
+    reveal: async () => null
+  };
 
-  private _activeChanged(
-    sender: CPWDocumentWidget['content'],
-    editor: CodeMirrorEditor | null
-  ) {
-    if (editor) {
-      this._activeEditorChanged.emit({ editor: wrapEditor(editor) });
-      // when editor content changed, update VirtualDocument
-      editor.model.sharedModel.changed.connect(
-        this._activeEditorContentChanged,
-        this
-      );
-      this.updateDocuments();
-    }
-  }
-
-  private _activeEditorContentChanged() {
-    this.updateDocuments();
+  get activeEditor() {
+    return this._activeDocumentEditor;
   }
 
   get editors(): Document.ICodeBlockOptions[] {
@@ -117,10 +98,31 @@ export class CPWAdapter extends WidgetLSPAdapter<CPWDocumentWidget> {
     ];
   }
 
+  private _activeChanged(
+    sender: CPWDocumentWidget['content'],
+    editor: CodeMirrorEditor | null
+  ) {
+    if (editor) {
+      this._activeDocumentEditor = wrapEditor(editor);
+      this._activeEditorChanged.emit({ editor: this.activeEditor! });
+      editor.model.sharedModel.changed.connect(
+        this._activeEditorContentChanged,
+        this
+      );
+      this.updateDocuments();
+    }
+  }
+
+  private _activeEditorContentChanged() {
+    this.updateDocuments();
+  }
+
   protected async initOnceReady(): Promise<void> {
     await untilReady(this.isReady.bind(this), -1);
     this.initVirtual();
+
     this.connectDocument(this.virtualDocument!, false).catch(console.warn);
+
     this.cpw.activeEditorChanged.connect(this._activeChanged, this);
   }
 
@@ -151,14 +153,3 @@ const wrapEditor = (editor: CodeMirrorEditor): Document.IEditor =>
     ready: async () => editor,
     reveal: async () => editor
   });
-
-const getPlaceholderEidtor = (): CodeMirrorEditor => {
-  const factory = new CodeMirrorEditorFactory({ extensions, languages });
-  const model = new CodeEditor.Model({ mimeType: 'text/x-python' });
-  model.sharedModel.setSource('');
-  return factory.newInlineEditor({
-    host: document.createElement('div'),
-    model,
-    config: { lineNumbers: false, lineWrap: false }
-  });
-};

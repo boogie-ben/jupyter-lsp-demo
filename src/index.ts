@@ -4,7 +4,7 @@ import {
   ILayoutRestorer
 } from '@jupyterlab/application';
 import { ILauncher } from '@jupyterlab/launcher';
-import { WidgetTracker } from '@jupyterlab/apputils';
+import { WidgetTracker, ISanitizer } from '@jupyterlab/apputils';
 import { type CPWDocumentWidget, CPWFactory } from './widget';
 import { ITranslator } from '@jupyterlab/translation';
 import { LabIcon } from '@jupyterlab/ui-components';
@@ -16,6 +16,8 @@ import {
   type WidgetLSPAdapterTracker
 } from '@jupyterlab/lsp';
 import { CPWAdapter } from './lspAdapter';
+import type { IRenderMime } from '@jupyterlab/rendermime';
+import { ICompletionProviderManager } from '@jupyterlab/completer';
 
 const cpwIcon = new LabIcon({
   name: 'cpw:icon',
@@ -38,7 +40,9 @@ function activate(
   lspDocumentConnectionManager: ILSPDocumentConnectionManager,
   lspFeatureManager: ILSPFeatureManager,
   lspCodeExtractorsManager: ILSPCodeExtractorsManager,
-  widgetLSPAdapterTracker: IWidgetLSPAdapterTracker
+  widgetLSPAdapterTracker: IWidgetLSPAdapterTracker,
+  appSanitizer: IRenderMime.ISanitizer,
+  completionProviderManager: ICompletionProviderManager
 ) {
   const tracker = new WidgetTracker<CPWDocumentWidget>({ namespace: 'cpw' });
 
@@ -112,6 +116,71 @@ function activate(
     kernelIconUrl: cpwIcon64
   });
 
+  // ---------------------------------
+  app.commands.addCommand('completer:invoke-cpw', {
+    label: trans.__('Display the completion helper.'),
+    execute: () => {
+      const id = tracker.currentWidget?.id;
+      if (id) {
+        completionProviderManager.invoke(id);
+      }
+    }
+  });
+
+  app.commands.addCommand('completer:select-cpw', {
+    label: trans.__('Select the completion suggestion.'),
+    execute: () => {
+      const id = tracker.currentWidget?.id;
+      if (id) {
+        return completionProviderManager.select(id);
+      }
+    }
+  });
+
+  app.commands.addKeyBinding({
+    command: 'completer:select-cpw',
+    keys: ['Enter'],
+    selector: '.cpw-cell-editor-section-content .jp-mod-completer-active'
+  });
+
+  const updateCompleter = async (
+    _: WidgetTracker<CPWDocumentWidget> | undefined,
+    widget: CPWDocumentWidget
+  ) => {
+    const completerContext = {
+      editor: widget.content.activeEditor ?? null,
+      session: widget.context.sessionContext.session,
+      widget,
+      sanitizer: appSanitizer
+    };
+    await completionProviderManager.updateCompleter(completerContext);
+    widget.content.activeEditorChanged.connect((_, editor) => {
+      const newCompleterContext = {
+        editor,
+        session: widget.context.sessionContext.session,
+        widget,
+        sanitizer: appSanitizer
+      };
+      return completionProviderManager.updateCompleter(newCompleterContext);
+    });
+    widget.context.sessionContext.sessionChanged.connect(() => {
+      const newCompleterContext = {
+        editor: widget.content.activeEditor ?? null,
+        session: widget.context.sessionContext.session,
+        widget
+      };
+      return completionProviderManager.updateCompleter(newCompleterContext);
+    });
+  };
+
+  tracker.widgetAdded.connect(updateCompleter);
+
+  completionProviderManager.activeProvidersChanged.connect(() => {
+    tracker.forEach(widget =>
+      updateCompleter(undefined, widget).catch(e => console.error(e))
+    );
+  });
+
   tracker.widgetAdded.connect((_, cpwDoc) => {
     const lspApdapt = new CPWAdapter(cpwDoc, {
       connectionManager: lspDocumentConnectionManager,
@@ -135,7 +204,9 @@ const plugin: JupyterFrontEndPlugin<void> = {
     ILSPDocumentConnectionManager,
     ILSPFeatureManager,
     ILSPCodeExtractorsManager,
-    IWidgetLSPAdapterTracker
+    IWidgetLSPAdapterTracker,
+    ISanitizer,
+    ICompletionProviderManager
   ],
   activate
 };
